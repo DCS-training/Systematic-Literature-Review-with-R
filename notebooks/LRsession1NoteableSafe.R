@@ -1,39 +1,45 @@
 # Install and load the required packages
-install.packages(c("synthesisr","dplyr"))
+install.packages(c("synthesisr"))
 install.packages("revtools", dependencies = TRUE)
+install.packages("bibliometrix", dependencies = TRUE)
+install.packages("stringr", " >= 1.5.2") # this is needed because the stringr version in Noteable is too old
+install.packages("magrittr", " >= 2.0.4")# this is needed because the magrittr version in Noteable is too old 
+#if you are running it locally you may need to run the below as well
+#install.packages ("dplyr")
 library(revtools)
 library(synthesisr)
 library(dplyr)
 library(bibliometrix)
 
-getwd()
+
 
 #==============================Section one: Import and Merge data=============================
 # Define the import folder path
-folder_path <- "/Users/kathryn/Desktop/SMLR/Data/"
+folder_path <- "Data/"
 
 # ------------------------1.1 import Ris files------------------------
 ## import single document
-ref1 <- read_bibliography("/Users/kathryn/Desktop/SMLR/Data/wos1000.ris")
+ref1 <- read_bibliography("Data/wos1000.ris")
 # It fails let's explore what the problems with the data
-lines <- readLines("/Users/kathryn/Desktop/SMLR/Data/wos1000.ris", encoding = "UTF-8")
+lines <- readLines("Data/wos1000.ris", encoding = "UTF-8")
 # check first 20 lines
 head(lines, 20)  
 # check last 20 lines and we see one empty
 tail(lines, 20)  
 # remove empty lines
 lines <- lines[lines != ""]  
-writeLines(lines, "/Users/kathryn/Desktop/SMLR/Data/clean/wos1000_clean.ris")
-ref1 <- read_bibliography("/Users/kathryn/Desktop/SMLR/Data/clean/wos1000_clean.ris")
+
+writeLines(lines, "Data/wos1000_clean.ris")
+ref1 <- read_bibliography("Data/wos1000_clean.ris")
 # a preview of column name and type
 str(ref1)
 # practice with other ris see what you find out (Due to multiple issues:1.weird characters (e.g. smart quotes, accents)2.broken lines3.encoding issues (UTF-8 vs Latin1)4.long abstract)
 
 # practice with synthesisr
-ref <- read_refs("/Users/kathryn/Desktop/SMLR/Data/DiscoverEd.ris")
+ref <- read_refs("Data/DiscoverEd.ris")
 # generate lists with all ris data, have a preview of the data
 files <- list.files(
-  "/Users/kathryn/Desktop/SMLR/Data",
+  "Data",
   pattern = "\\.ris$",
   full.names = TRUE
 )
@@ -213,5 +219,6 @@ removed_rows <- combined_unique %>%
 View(removed_rows)  # to review which rows were removed 5730 left
 
 # Write the combined data frame to a new CSV file
-write.csv(combined_unique, "/Users/kathryn/Desktop/SMLR/Data/clean/metadata.csv", row.names = FALSE)
-write_refs(combined_unique, "/Users/kathryn/Desktop/SMLR/Data/clean/metadata.ris", format = "ris")
+dir.create("Data/clean")
+write.csv(combined_unique, "Data/clean/metadata.csv", row.names = FALSE)
+write_refs(combined_unique, "Data/clean/metadata.ris", format = "ris")
