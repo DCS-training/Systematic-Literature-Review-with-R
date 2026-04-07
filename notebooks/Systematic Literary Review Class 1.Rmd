@@ -39,19 +39,19 @@ library(bibliometrix)
 1.  Define the import folder path
 
 ```{r }
-folder_path <- "Data/"
+folder_path <- "../Data/"
 ```
 
 2.  Import Ris files *N.B.The code below will fail, and it is expected*
 
 ```{r}
-ref1 <- read_bibliography("Data/wos1000.ris")
+ref1 <- read_bibliography("../Data/wos1000.ris")
 ```
 
 2.1 Let's fix the errors
 
 ```{r}
-lines <- readLines("Data/wos1000.ris", encoding = "UTF-8")
+lines <- readLines("../Data/wos1000.ris", encoding = "UTF-8")
 # check first 20 lines
 head(lines, 20)  
 # check last 20 lines and we see one empty
@@ -63,8 +63,8 @@ lines <- lines[lines != ""]
 2.2 Export the cleaned file
 
 ```{r}
-writeLines(lines, "Data/wos1000_clean.ris")
-ref1 <- read_bibliography("Data/wos1000_clean.ris") 
+writeLines(lines, "../Data/wos1000_clean.ris")
+ref1 <- read_bibliography("../Data/wos1000_clean.ris") 
 # a preview of column name and type
 str(ref1)
 ```
@@ -89,10 +89,10 @@ TIPS: There are multiple issues
 @Dandian Can you add some info on SynthesisR package
 
 ```{r}
-ref <- read_refs("Data/DiscoverEd.ris")
+ref <- read_refs("../Data/DiscoverEd.ris")
 # generate lists with all ris data, have a preview of the data
 files <- list.files(
-  "Data",
+  "../Data",
   pattern = "\\.ris$",
   full.names = TRUE
 )
@@ -383,9 +383,9 @@ View(removed_rows)  # to review which rows were removed 5730 left
 ## Write the combined data frame to a new CSV file
 
 ```{r }
-dir.create("Data/clean")
-write.csv(combined_unique, "Data/clean/metadata.csv", row.names = FALSE)
-write_refs(combined_unique, "Data/clean/metadata.ris", format = "ris")
+dir.create("../Data/clean")
+write.csv(combined_unique, "../Data/clean/metadata.csv", row.names = FALSE)
+write_refs(combined_unique, "../Data/clean/metadata.ris", format = "ris")
 
 ```
 
