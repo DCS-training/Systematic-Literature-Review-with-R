@@ -11,7 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # Systematic **Literature Review**
 
-Loreum Ipsum @Dandian please enter a short introduction on what will be cover during the first class
+This workshop introduces how R can be used to support systematic review workflows. Today’s training will provide an overview of the systematic literature review process, including formulating research questions, developing search strategies, and using R to import bibliographic data from literature databases. It will also cover reference deduplication in preparation for literature screening and meta-analysis.
 
 ## Set up
 
@@ -43,6 +43,7 @@ folder_path <- "../Data/"
 ```
 
 2.  Import Ris files *N.B.The code below will fail, and it is expected*
+read_bibliography is a core function in revtools used to import bibliographic data from databases such as Scopus, Web of Science, PubMed, and reference managers into R for systematic review workflows. (https://github.com/mjwestgate/revtools) 
 
 ```{r}
 ref1 <- read_bibliography("../Data/wos1000.ris")
@@ -86,7 +87,7 @@ TIPS: There are multiple issues
 
 ## Practice with SynthesisR Package
 
-@Dandian Can you add some info on SynthesisR package
+synthesisr is an R package that enhances the data preparation of systematic reviews by offering robust and reproducible tools for importing, standardising, merging, and deduplicating bibliographic records from multiple databases (https://github.com/mjwestgate/synthesisr). Its main strength lies in handling messy bibliographic data and producing a clean, deduplicated reference set that is well suited for large scale searches.
 
 ```{r}
 ref <- read_refs("../Data/DiscoverEd.ris")
@@ -99,7 +100,7 @@ files <- list.files(
 refs_list <- lapply(files, read_refs)
 ```
 
-You can import multiple data and use SynthesisR to solve the limitation of RevTools and combine the .Ris data into one.
+You can import multiple data and use SynthesisR(read_ref) to solve the limitation of RevTools and combine the .Ris data into one.
 
 1.  List all .ris files and import(These are the literature data download from Web of Science and DiscoverEd)
 
@@ -370,7 +371,6 @@ combined_unique <- bind_rows(non_duplicates, keep_rows) %>%
 Deduplicate from title
 
 ```{r}
-combined_unique$title <- tolower(trimws(combined_unique$title))
 combined_final <- combined_unique %>%
   group_by(title_clean) %>%
   slice(1) %>%  # keep only the first row in each group
@@ -380,7 +380,7 @@ removed_rows <- combined_unique %>%
 View(removed_rows)  # to review which rows were removed 5730 left
 ```
 
-## Write the combined data frame to a new CSV file
+## Write the combined data frame to a new CSV and a RIS file
 
 ```{r }
 dir.create("../Data/clean")
