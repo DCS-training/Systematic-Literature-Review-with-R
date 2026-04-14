@@ -1,0 +1,586 @@
+---
+title: "Systematic Literature Reviews with R:Session 2"
+output:
+  html_document:
+    df_print: paged
+  word_document: default
+  pdf_document: default
+date: "2026-04-08"
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Systematic **Literature Review**
+
+This workshop introduces how R can be used to support systematic review
+workflows. The previous session provided an overview of the systematic
+literature review process, including how to formulate research
+questions, develop search strategies, and use R to import bibliographic
+data from literature databases using revtools and synthesisr. It also
+covered reference deduplication to prepare datasets for literature
+screening and meta-analysis.
+
+In today’s workshop, we will focus on the screening process. We will
+demonstrate how to use revtools to screen titles, abstracts, and full
+texts. In addition, we will introduce text mining, meta-analysis, and visualising results in R.
+
+## Set up
+
+### Package set up
+
+This part may vary if you are working locally but to get set up in
+Noteable below you can find all the packages that need to be installed
+and loaded to run the code.
+
+```{r }
+# Install and load the required packages
+install.packages("revtools", dependencies = TRUE)
+install.packages("cld3")
+install.packages("widyr")
+install.packages("metafor") 
+library(revtools)
+library(synthesisr)
+library(stringr)
+library(dplyr)
+```
+
+## Include and Exclude creterias prescreening:
+
+Last week, we performed deduplication using both DOI and title + author
+matching. It is also beneficial to use revtools(screen_duplicates) for a
+final manual check, as automated methods may miss subtle duplicates
+caused by variations in metadata (e.g., formatting differences, missing
+DOIs, or slight changes in titles). A manual review step helps ensure
+higher accuracy and reduces the risk of retaining duplicate records or
+accidentally removing relevant studies.
+
+```{r }
+refdata <- read.csv("../clean/metadata.csv")
+screen_duplicates(refdata)
+```
+
+### Language: English Only
+
+Other laguage tool such textcat is not accurate as cld3, to improve the
+accuracy we include both title and abstract column
+
+```{r }
+#you can import the deduplication data now;
+refdata <- read.csv("../notebooks/cleaned.csv")
+
+library(cld3)
+refdata$language <- detect_language(paste(
+  refdata$title,
+  refdata$abstract
+))
+# keep a record for the literature is not recognised in english and review it before you remove it
+noendata <- refdata %>%
+  filter(language != "en")
+english_data <- refdata %>%
+  filter(language == "en")
+```
+
+### Year: 2016-2026
+
+```{r }
+# You can check the column type, if it is character type you can use as.numeric to convert it
+str(english_data$year)
+filtered_data <- english_data %>%
+  filter(year >= 2016 & year <= 2026)
+year_out <- english_data %>%
+  filter(is.na(year) | year < 2016 | year > 2026)
+```
+
+### Keywords search prescreening search
+
+Follow the same search strategy(("digital device*" OR smartphone* OR
+"mobile phone*" OR "screen time" OR "social media" OR "internet use" OR
+"digital technolog*" OR "online activity") AND ("mental health" OR
+wellbeing OR "well-being" OR depression OR anxiety OR stress OR
+"psychological distress" OR "mental disorder*") AND ("young adult*" OR
+youth OR "college student*" OR "university student*" OR adolescent\*))
+
+This step can help to reduce the task amount for large dataset as we
+have to a smaller size, which is more handy for screening.
+
+```{r }
+# we can check if any empty title/abstract in our dataset
+no_abstract <- filtered_data %>%
+  filter(is.na(abstract) | abstract == "")
+# we define the keywords follow the strategy we set from PICO/PEO, P:population, I:intervention/E:exposure,C:comparison, O:outcome. You can expand the key terms rather to strict by adding anonymous.
+
+digital_terms <- c(
+  "digital device", "smartphone", "mobile phone",
+  "screen time", "social media", "internet",
+  "online", "digital technolog", "device use"
+)
+
+mental_health_terms <- c(
+  "mental health", "wellbeing", "well-being",
+  "depression", "anxiety", "stress",
+  "psychological", "distress", "mental disorder",
+  "mood", "emotional"
+)
+
+population_terms <- c(
+  "young adult", "youth", "student",
+  "college", "university", "adolescent",
+  "teen", "young people"
+)
+# Follow the  Boolean we use | for or in each keyword group
+pattern_digital <- paste0(digital_terms, collapse = "|")
+pattern_mental  <- paste0(mental_health_terms, collapse = "|")
+pattern_pop     <- paste0(population_terms, collapse = "|")
+
+# Adding exclude terms, depends on your familiarity with your data and make sure it not include any bias on viewing RQ.For this example data, We would like to remove the literature with animal studies
+exclude_terms <- c("animal", "rat", "mouse","monkey")
+pattern_exclude <- paste(exclude_terms, collapse = "|")
+
+# Before we apply the keyword searching on our data, we will build a new column called text to store the lowercased title and abstract
+with_abstract <- filtered_data %>%
+  filter(!is.na(abstract) & abstract != "") %>%
+  mutate(text = tolower(paste(title, abstract))) %>%
+  filter(
+    grepl(pattern_digital, text) &
+    grepl(pattern_mental, text) &
+    grepl(pattern_pop, text) &
+    !grepl(pattern_exclude, text)
+  )
+combined_data <- bind_rows(with_abstract, no_abstract)
+# Keep a record for the data has been filtered out
+removed_data <- filtered_data %>%
+  filter(!is.na(abstract) & abstract != "") %>%
+  mutate(text = tolower(paste(title, abstract))) %>%
+  filter(
+    !(grepl(pattern_digital, text) &
+    grepl(pattern_mental, text) &
+    grepl(pattern_pop, text))|
+    grepl(pattern_exclude, text)
+  )
+nrow(combined_data)
+```
+
+## Screening
+
+### Interactive screen interface with r revtools screen title first
+
+```{r }
+screen_titles(combined_data)
+```
+
+### Abstract screen
+
+```{r }
+screen_abstracts(combined_data)
+```
+
+### Practice with random select data from big dataset
+
+```{r }
+#Random seek 50 from dataset
+set.seed(123)
+sample_50 <- combined_data %>%
+  slice_sample(n = 50)
+screen_titles(sample_50)
+screen_abstracts(sample_50)
+```
+
+### manual review without revtools
+
+```{r }
+screentitle <- combined_data %>%
+  select(title_clean)
+screenabstract <- combined_data %>%
+  select(abstract)
+```
+
+### Build a table/record for screening
+
+```{r }
+screening_record <- sample_50 %>%
+  mutate(
+    screening_decision = NA,  # include / exclude / unsure for options
+    exclusion_reason = NA     # reason if excluded/note
+  ) %>%
+  select(
+    title,
+    author,
+    year,
+    doi,
+    abstract,
+    screening_decision,
+    exclusion_reason
+  )
+```
+
+```{r }
+# manual type in for the reference
+screening_record$screening_decision[1] <- "include"
+screening_record$screening_decision[2] <- "exclude"
+screening_record$exclusion_reason[2] <- "Not relevant population"
+# Practice to write more records
+```
+
+###Combine the two reviewers’ assessments into a single dataset, or use
+library(readxl) to import the Excel data. This approach helps merge and
+reconcile the screening results from both reviewers.
+
+```{r }
+# Two sample data from screening title
+rev1 <- read.csv("../notebooks/sampletitle.csv")
+rev2 <- read.csv("../notebooks/sampletitle2.csv")
+# merge with title name
+merged <- rev1 %>%
+  full_join(rev2, by = "title_clean", suffix = c("_r1", "_r2"))
+table(merged$screened_titles_r1, merged$screened_titles_r2)
+# create a column to recorde agreement
+merged <- merged %>%
+  mutate(
+    agreement = ifelse(screened_titles_r1 == screened_titles_r2,
+                        "agree", "disagree")
+  )
+```
+
+## META ANALYSIS
+
+After screening full texts, you can extract your meta data in a table,
+or manual build one in R. metafor package (gold standard in R
+meta-analysis) <https://cran.r-project.org/package=metafor>
+Meta-analysis visualisation (forest funnel plots)
+<https://www.maths.bris.ac.uk/R/web/packages/metaviz/vignettes/metaviz.html>
+
+```{r }
+# load package
+  library(metafor)
+
+# Example dataset (manual import here as example, replace with your real dataset)
+dat <- data.frame(
+  study = c("Study1", "Study2", "Study3", "Study4", "Study5",
+            "Study6", "Study7", "Study8"),
+  
+  yi = c(0.20, 0.35, -0.10, 0.50, 0.15, 0.40, 0.05, 0.25),  # effect sizes
+  
+  sei = c(0.10, 0.15, 0.20, 0.12, 0.18, 0.14, 0.16, 0.11)   # standard errors
+)
+
+# Compute variance converts standard error into variance as Meta-analysis needs variance, not SE
+dat$vi <- dat$sei^2
+# Save cleaned dataset
+write.csv(dat, "meta_input_data.csv", row.names = FALSE)
+
+# Random-effects meta-analysis (REML)
+res <- rma(yi = yi,
+           vi = vi,
+           data = dat,
+           method = "REML")
+# Print results
+print(res)
+# Save model summary (text output)
+capture.output(summary(res), file = "meta_analysis_summary.txt")
+
+# Extract results
+results_df <- data.frame(
+  pooled_effect = res$b,
+  ci_lower = res$ci.lb,
+  ci_upper = res$ci.ub,
+  I2 = res$I2,
+  tau2 = res$tau2,
+  Q_pvalue = res$QEp
+)
+
+write.csv(results_df, "meta_results_summary.csv", row.names = FALSE)
+
+# Forest plot
+png("forest_plot.png", width = 1000, height = 700)
+forest(
+  res,
+  slab = dat$study,
+  xlab = "Effect Size",
+  mlab = "Random Effects Model (REML)"
+)
+dev.off()
+
+# Funnel Plot 
+png("funnel_plot.png", width = 800, height = 700)
+funnel(
+  res,
+  xlab = "Effect Size",
+  ylab = "Standard Error"
+)
+dev.off()
+
+# publication bias check egger test
+egger <- regtest(res, model = "rma")
+capture.output(egger, file = "egger_test.txt")
+
+# Leave-one-out analysis
+loo <- leave1out(res)
+write.csv(as.data.frame(loo), "leave_one_out.csv", row.names = FALSE)
+
+# influence diagnose
+png("influence_plot.png", width = 900, height = 700)
+inf <- influence(res)
+plot(inf)
+dev.off()
+```
+Interpretation random-effects result
+Summary: A random-effects meta-analysis revealed a significant positive effect (β = 0.25, p < .001) with low-to-moderate heterogeneity (I² = 33.5%), indicating reasonably consistent effects across studies.
+egger test: A regression test for funnel plot asymmetry did not indicate significant small-study effects (z = -1.37, p = .171), suggesting no strong evidence of publication bias. The estimated intercept implied a positive effect among highly precise studies (b = 0.63, 95% CI [0.08, 1.18]).
+A leave-one-out sensitivity analysis indicated that the overall effect size remained stable (β ranged from 0.22 to 0.28) and statistically significant across all iterations (p < .001). Heterogeneity estimates showed minor variation but no evidence that any single study disproportionately influenced the results, supporting the robustness of the meta-analytic findings.
+
+## Ploting for the reference
+
+factoextra (for clustering + PCA plots)
+<https://rpkgs.datanovia.com/factoextra/> 
+ggplot2 official learning
+<https://ggplot2.tidyverse.org/>
+
+### Word clustering is applied to titles, as abstracts are longer and
+require more processing; titles and keywords are preferred.
+
+Cluster Analysis in R <https://rpkgs.datanovia.com/factoextra/>
+
+Cluster analysis tutorials:
+<https://www.r-bloggers.com/2021/10/cluster-analysis-using-r-2/>
+
+```{r }
+# Load packages:these packages are used for text processing, clustering, and plotting
+library(tidyverse)
+library(tidytext)
+library(proxy)
+library(factoextra)
+library(ggplot2)
+
+# Prepare data and create a document ID and clean titles (lowercase)
+sample_50 <- sample_50 %>%
+  mutate(doc_id = row_number(),
+         title = tolower(title))
+# Break titles into words, remove stopwords, and compute importance (TF-IDF)
+title_tfidf <- sample_50 %>%
+  unnest_tokens(word, title) %>%
+  anti_join(stop_words) %>%
+  filter(str_length(word) > 2) %>%
+  filter(!word %in% c("study","analysis","results","review","based","using")) %>%
+  count(doc_id, word, sort = TRUE) %>%
+  bind_tf_idf(word, doc_id, n)
+# Save TF-IDF results
+write_csv(title_tfidf, "tfidf_results.csv")
+
+# Convert data into matrix format for clustering
+dtm <- title_tfidf %>%
+  tidytext::cast_dtm(doc_id, word, tf_idf)
+
+matrix_data <- as.matrix(dtm)
+
+# Remove empty rows (documents with no words)
+matrix_data <- matrix_data[rowSums(matrix_data) > 0, ]
+
+# Measure similarity between documents (using cosine distance)
+dist_matrix <- proxy::dist(matrix_data, method = "cosine")
+
+# Group similar documents into clusters
+hc <- hclust(dist_matrix, method = "ward.D2")
+# Plot dendrogram (tree diagram) A dendrogram is a tree diagram used in hierarchical clustering to visualise the similarity between studies and to guide the selection of cluster groups.It is a visual guide for cluster not final themes.It shows structure in the final literature dataset
+plot(hc, main = "Dendrogram of Study Titles")
+# Save plot
+png("dendrogram.png", width = 800, height = 600)
+plot(hc, main = "Dendrogram of Study Titles")
+dev.off()
+# Choose number of clusters (k is defined by you)
+k <- 4
+clusters <- cutree(hc, k = k)
+# Map cluster results back to documents
+doc_clusters <- data.frame(
+  doc_id = as.numeric(rownames(matrix_data)),
+  cluster = clusters
+)
+# Merge cluster info into original data
+sample_50 <- sample_50 %>%
+  mutate(doc_id = as.integer(doc_id)) %>%
+  left_join(doc_clusters, by = "doc_id")
+# Save clustered data
+write_csv(sample_50, "clustered_data.csv")
+
+# Find important words in each cluster
+cluster_terms <- title_tfidf %>%
+  left_join(doc_clusters, by = "doc_id") %>%
+  filter(!is.na(cluster)) %>%
+  group_by(cluster, word) %>%
+  summarise(mean_tf_idf = mean(tf_idf), .groups = "drop") %>%
+  arrange(cluster, desc(mean_tf_idf)) %>%
+  group_by(cluster) %>%
+  slice_head(n = 10)
+
+print(as.data.frame(cluster_terms))
+# Save cluster keywords
+write_csv(cluster_terms, "cluster_keywords.csv")
+
+# List the titles by cluster
+result <- sample_50 %>%
+  arrange(cluster) %>%
+  select(cluster, title)
+print(result)
+# Save results
+write_csv(result, "titles_by_cluster.csv")
+
+# Check titles inside each cluster to help identify the themes
+sample_50 %>%
+  group_by(cluster) %>%
+  summarise(titles = paste(head(title, 5), collapse = " | "))
+# We can select the top 3(define as need) from each cluster
+cluster_terms %>%
+  group_by(cluster) %>%
+  summarise(label = paste(head(word, 3), collapse = ", "))
+# Label clusters based on interpretations 
+sample_50 <- sample_50 %>%
+  mutate(cluster_label = case_when(
+    cluster == 1 ~ "Cognitive and Psychological Impacts of Digital Media",
+    cluster == 2 ~ "Social Media Use Motivations and Behaviours",
+    cluster == 3 ~ "Digital Addiction and Mental Health Outcomes",
+    cluster == 4 ~ "Digital Mental Health Tools and Interventions",
+    TRUE ~ "Unassigned"
+  ))
+# Save labeled data
+write_csv(sample_50, "final_labeled_data.csv")
+# PCA visualisation, profesional for statistical visualisation includes individual as a point
+pca <- prcomp(matrix_data, scale. = TRUE)
+png("pca_plot.png", width = 800, height = 600)
+fviz_pca_ind(
+  pca,
+  geom = "point",
+  habillage = sample_50$cluster_label,
+  addEllipses = TRUE,
+  title = "Clusters of Studies (PCA)"
+)
+dev.off()
+
+# Can also view theme distribution by publication time
+p <-ggplot(sample_50, aes(x = year, fill = cluster_label)) +
+  geom_bar(position = "dodge") +
+  labs(
+    title = "Distribution of Studies by Theme Over Time",
+    x = "Year",
+    y = "Count",
+    fill = "Theme"
+  ) +
+  theme_minimal()
+print(p)
+ggsave("time_distribution.png", plot = p, width = 8, height = 6)
+dev.off()
+
+# FACET plot
+p <- ggplot(sample_50, aes(x = reorder(cluster_label, year), y = year)) +
+  geom_point() +
+  coord_flip() +
+  facet_wrap(~ cluster_label, scales = "free_y") +
+  labs(
+    title = "Studies Grouped by Theme",
+    x = "Title",
+    y = "Year"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    strip.text = element_text(face = "bold"),
+    plot.title = element_text(hjust = 0.5, face = "bold")
+  )+theme(
+  axis.text.y = element_text(size = 6)
+)
+
+print(p)
+
+ggsave(
+  "facet_plot.png",
+  plot = p,
+  width = 14,     
+  height = 10,
+  dpi = 300,
+  bg = "white"
+)
+```
+
+# Practice: Prisma table
+
+PRISMA 2020 official site (checklist + flow diagram)
+
+https://www.prisma-statement.org/
+
+PRISMA extensions (PRISMA-S for search strategies, PRISMA-P for protocols)
+
+https://www.prisma-statement.org/extensions
+
+```{r }
+# load package
+library(tidyverse)
+prisma <- data.frame(
+  stage = c(
+    "Records identified",
+    "Duplicates (DOI removed)",
+    "Duplicates (clean: title + author)",
+    "Manual deduplication",
+    "Non-English removed",
+    "Before 2016 removed",
+    "No abstract available",
+    "Title + abstract screened",
+    "Records screened",
+    "Records excluded",
+    "Full-text assessed",
+    "Full-text excluded",
+    "Studies included"
+  ),
+  n = c(
+    6457,
+    694,
+    40,
+    34,
+    nrow(noendata),
+    nrow(year_out),
+    nrow(no_abstract),
+    nrow(with_abstract),
+    nrow(combined_data),
+    nrow(removed_data),
+    nrow(sample_50),
+    10,
+    40
+  )
+)
+
+# Order for flow
+prisma$stage <- factor(prisma$stage, levels = rev(prisma$stage))
+
+# Flow Plot
+p <- ggplot(prisma, aes(x = 1, y = stage)) +
+  geom_point(size = 4, color = "steelblue") +
+  geom_text(aes(label = paste0(stage, " (n = ", n, ")")),
+            hjust = -0.05,
+            size = 3.8) +
+  geom_segment(aes(x = 1, xend = 1,
+                   y = as.numeric(stage),
+                   yend = as.numeric(stage) - 1),
+               arrow = arrow(length = unit(0.2, "cm")),
+               color = "grey50") +
+  theme_void() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.background = element_rect(fill = "white", color = NA)
+  ) +
+  xlim(1, 1.8) +
+  ggtitle("PRISMA Flow Diagram (Study Selection Process)")
+print(p)
+ggsave("PRISMA_Flow.png", plot = p, width = 10, height = 8, bg = "white")
+```
+
+# Summary for the workshop
+
+Reproducible Systematic Review Project Workflow:
+
+1.  Place database import R
+2.  Run scripts in R for cleaning and analysis
+3.  Store processed data
+4.  Produce reports in reports using R Markdown
+5.  Store PRISMA flow diagrams in prisma
