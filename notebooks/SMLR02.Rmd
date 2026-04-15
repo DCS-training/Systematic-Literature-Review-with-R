@@ -27,7 +27,8 @@ screening and meta-analysis.
 
 In today’s workshop, we will focus on the screening process. We will
 demonstrate how to use revtools to screen titles, abstracts, and full
-texts. In addition, we will introduce text mining, meta-analysis, and visualising results in R.
+texts. In addition, we will introduce text mining, meta-analysis, and
+visualising results in R.
 
 ## Set up
 
@@ -40,6 +41,7 @@ and loaded to run the code.
 ```{r }
 # Install and load the required packages
 install.packages("revtools", dependencies = TRUE)
+install.packages("synthesisr")
 install.packages("cld3")
 install.packages("widyr")
 install.packages("metafor") 
@@ -49,7 +51,7 @@ library(stringr)
 library(dplyr)
 ```
 
-## Include and Exclude creterias prescreening:
+## Include and Exclude criteria prescreening:
 
 Last week, we performed deduplication using both DOI and title + author
 matching. It is also beneficial to use revtools(screen_duplicates) for a
@@ -60,7 +62,7 @@ higher accuracy and reduces the risk of retaining duplicate records or
 accidentally removing relevant studies.
 
 ```{r }
-refdata <- read.csv("../clean/metadata.csv")
+refdata <- read.csv("../Data/Clean/metadata.csv")
 screen_duplicates(refdata)
 ```
 
@@ -71,7 +73,7 @@ accuracy we include both title and abstract column
 
 ```{r }
 #you can import the deduplication data now;
-refdata <- read.csv("../notebooks/cleaned.csv")
+refdata <- read.csv("../Data/Clean/cleaned.csv")
 
 library(cld3)
 refdata$language <- detect_language(paste(
@@ -226,14 +228,16 @@ screening_record$exclusion_reason[2] <- "Not relevant population"
 # Practice to write more records
 ```
 
-###Combine the two reviewers’ assessments into a single dataset, or use
+### Combine the two reviewers’ assessments into a single dataset
+
+Combine the two reviewers’ assessments into a single dataset, or use
 library(readxl) to import the Excel data. This approach helps merge and
 reconcile the screening results from both reviewers.
 
 ```{r }
 # Two sample data from screening title
-rev1 <- read.csv("../notebooks/sampletitle.csv")
-rev2 <- read.csv("../notebooks/sampletitle2.csv")
+rev1 <- read.csv("../Data/Clean/sampletitle.csv")
+rev2 <- read.csv("../Data/Clean/sampletitle2.csv")
 # merge with title name
 merged <- rev1 %>%
   full_join(rev2, by = "title_clean", suffix = c("_r1", "_r2"))
@@ -258,6 +262,11 @@ Meta-analysis visualisation (forest funnel plots)
 # load package
   library(metafor)
 
+#Create an output folder 
+if (!dir.exists("../output")) {
+  dir.create("../output")
+}
+
 # Example dataset (manual import here as example, replace with your real dataset)
 dat <- data.frame(
   study = c("Study1", "Study2", "Study3", "Study4", "Study5",
@@ -268,11 +277,20 @@ dat <- data.frame(
   sei = c(0.10, 0.15, 0.20, 0.12, 0.18, 0.14, 0.16, 0.11)   # standard errors
 )
 
+```
+
+Compute variance
+
+```{r}
 # Compute variance converts standard error into variance as Meta-analysis needs variance, not SE
 dat$vi <- dat$sei^2
 # Save cleaned dataset
-write.csv(dat, "meta_input_data.csv", row.names = FALSE)
+write.csv(dat, "../output/meta_input_data.csv", row.names = FALSE)
+```
 
+Random-effects meta-analysis (REML)
+
+```{r}
 # Random-effects meta-analysis (REML)
 res <- rma(yi = yi,
            vi = vi,
@@ -281,8 +299,12 @@ res <- rma(yi = yi,
 # Print results
 print(res)
 # Save model summary (text output)
-capture.output(summary(res), file = "meta_analysis_summary.txt")
+capture.output(summary(res), file = "../output/meta_analysis_summary.txt")
+```
 
+Extract results
+
+```{r}
 # Extract results
 results_df <- data.frame(
   pooled_effect = res$b,
@@ -293,10 +315,15 @@ results_df <- data.frame(
   Q_pvalue = res$QEp
 )
 
-write.csv(results_df, "meta_results_summary.csv", row.names = FALSE)
+write.csv(results_df, "../output/meta_results_summary.csv", row.names = FALSE)
 
+```
+
+Forest plot
+
+```{r}
 # Forest plot
-png("forest_plot.png", width = 1000, height = 700)
+png("../output/forest_plot.png", width = 1000, height = 700)
 forest(
   res,
   slab = dat$study,
@@ -305,8 +332,13 @@ forest(
 )
 dev.off()
 
+```
+
+Funnel Plot
+
+```{r}
 # Funnel Plot 
-png("funnel_plot.png", width = 800, height = 700)
+png("../output/funnel_plot.png", width = 800, height = 700)
 funnel(
   res,
   xlab = "Effect Size",
@@ -314,39 +346,86 @@ funnel(
 )
 dev.off()
 
+
+```
+
+Publication bias check Egger test
+
+```{r}
 # publication bias check egger test
 egger <- regtest(res, model = "rma")
-capture.output(egger, file = "egger_test.txt")
+capture.output(egger, file = "../output/egger_test.txt")
 
+```
+
+Leave-one-out analysis
+
+```{r}
 # Leave-one-out analysis
 loo <- leave1out(res)
-write.csv(as.data.frame(loo), "leave_one_out.csv", row.names = FALSE)
+write.csv(as.data.frame(loo), "../output/leave_one_out.csv", row.names = FALSE)
 
+
+```
+
+Influence diagnose
+
+```{r}
 # influence diagnose
-png("influence_plot.png", width = 900, height = 700)
+png("../output/influence_plot.png", width = 900, height = 700)
 inf <- influence(res)
 plot(inf)
 dev.off()
 ```
-Interpretation random-effects result
-Summary: A random-effects meta-analysis revealed a significant positive effect (β = 0.25, p < .001) with low-to-moderate heterogeneity (I² = 33.5%), indicating reasonably consistent effects across studies.
-egger test: A regression test for funnel plot asymmetry did not indicate significant small-study effects (z = -1.37, p = .171), suggesting no strong evidence of publication bias. The estimated intercept implied a positive effect among highly precise studies (b = 0.63, 95% CI [0.08, 1.18]).
-A leave-one-out sensitivity analysis indicated that the overall effect size remained stable (β ranged from 0.22 to 0.28) and statistically significant across all iterations (p < .001). Heterogeneity estimates showed minor variation but no evidence that any single study disproportionately influenced the results, supporting the robustness of the meta-analytic findings.
+
+Interpretation random-effects result Summary: A random-effects
+meta-analysis revealed a significant positive effect (β = 0.25, p \<
+.001) with low-to-moderate heterogeneity (I² = 33.5%), indicating
+reasonably consistent effects across studies. egger test: A regression
+test for funnel plot asymmetry did not indicate significant small-study
+effects (z = -1.37, p = .171), suggesting no strong evidence of
+publication bias. The estimated intercept implied a positive effect
+among highly precise studies (b = 0.63, 95% CI [0.08, 1.18]). A
+leave-one-out sensitivity analysis indicated that the overall effect
+size remained stable (β ranged from 0.22 to 0.28) and statistically
+significant across all iterations (p \< .001). Heterogeneity estimates
+showed minor variation but no evidence that any single study
+disproportionately influenced the results, supporting the robustness of
+the meta-analytic findings.
 
 ## Ploting for the reference
 
 factoextra (for clustering + PCA plots)
-<https://rpkgs.datanovia.com/factoextra/> 
-ggplot2 official learning
+<https://rpkgs.datanovia.com/factoextra/> ggplot2 official learning
 <https://ggplot2.tidyverse.org/>
 
 ### Word clustering is applied to titles, as abstracts are longer and
+
 require more processing; titles and keywords are preferred.
 
 Cluster Analysis in R <https://rpkgs.datanovia.com/factoextra/>
 
 Cluster analysis tutorials:
 <https://www.r-bloggers.com/2021/10/cluster-analysis-using-r-2/>
+
+Install the missing library and update the existing libraries to the
+right version
+
+Before running the below you will have to go to Session\> Restart R.
+
+This is because the rlang version that come with Noteable it is not
+compatible with factor extra so we first need to get the right version
+of it.
+
+You will also probably see a prompt that will ask you to reboot R, press
+yes
+
+```{r}
+install.packages("rlang", dependencies = TRUE) # this is needed because the version in Noteable is too old
+install.packages("factoextra")
+```
+
+Make sure that all the needed libraries are loaded
 
 ```{r }
 # Load packages:these packages are used for text processing, clustering, and plotting
@@ -356,6 +435,11 @@ library(proxy)
 library(factoextra)
 library(ggplot2)
 
+```
+
+Prepare the data and save
+
+```{r}
 # Prepare data and create a document ID and clean titles (lowercase)
 sample_50 <- sample_50 %>%
   mutate(doc_id = row_number(),
@@ -369,13 +453,23 @@ title_tfidf <- sample_50 %>%
   count(doc_id, word, sort = TRUE) %>%
   bind_tf_idf(word, doc_id, n)
 # Save TF-IDF results
-write_csv(title_tfidf, "tfidf_results.csv")
+write_csv(title_tfidf, "../output/tfidf_results.csv")
+```
+
+Convert into a matrix
+
+```{r}
 
 # Convert data into matrix format for clustering
 dtm <- title_tfidf %>%
   tidytext::cast_dtm(doc_id, word, tf_idf)
 
 matrix_data <- as.matrix(dtm)
+```
+
+Remove empty rows and measure the similarity coefficient
+
+```{r}
 
 # Remove empty rows (documents with no words)
 matrix_data <- matrix_data[rowSums(matrix_data) > 0, ]
@@ -383,14 +477,36 @@ matrix_data <- matrix_data[rowSums(matrix_data) > 0, ]
 # Measure similarity between documents (using cosine distance)
 dist_matrix <- proxy::dist(matrix_data, method = "cosine")
 
+```
+
+Group similar documents
+
+```{r}
+
 # Group similar documents into clusters
 hc <- hclust(dist_matrix, method = "ward.D2")
-# Plot dendrogram (tree diagram) A dendrogram is a tree diagram used in hierarchical clustering to visualise the similarity between studies and to guide the selection of cluster groups.It is a visual guide for cluster not final themes.It shows structure in the final literature dataset
+```
+
+Plot and save the dendogram.
+
+A dendrogram is a tree diagram used in hierarchical clustering to
+visualise the similarity between studies and to guide the selection of
+cluster groups.It is a visual guide for cluster not final themes.It
+shows structure in the final literature dataset
+
+```{r}
+
+# Plot dendrogram (tree diagram) 
 plot(hc, main = "Dendrogram of Study Titles")
 # Save plot
-png("dendrogram.png", width = 800, height = 600)
+png("../output/dendrogram.png", width = 800, height = 600)
 plot(hc, main = "Dendrogram of Study Titles")
 dev.off()
+```
+
+Choose number of clusters
+
+```{r}
 # Choose number of clusters (k is defined by you)
 k <- 4
 clusters <- cutree(hc, k = k)
@@ -399,13 +515,23 @@ doc_clusters <- data.frame(
   doc_id = as.numeric(rownames(matrix_data)),
   cluster = clusters
 )
+
+```
+
+Merge and save cluster info
+
+```{r}
 # Merge cluster info into original data
 sample_50 <- sample_50 %>%
   mutate(doc_id = as.integer(doc_id)) %>%
   left_join(doc_clusters, by = "doc_id")
 # Save clustered data
-write_csv(sample_50, "clustered_data.csv")
+write_csv(sample_50, "../output/clustered_data.csv")
+```
 
+Find and save the keywords
+
+```{r}
 # Find important words in each cluster
 cluster_terms <- title_tfidf %>%
   left_join(doc_clusters, by = "doc_id") %>%
@@ -418,16 +544,26 @@ cluster_terms <- title_tfidf %>%
 
 print(as.data.frame(cluster_terms))
 # Save cluster keywords
-write_csv(cluster_terms, "cluster_keywords.csv")
+write_csv(cluster_terms, "../output/cluster_keywords.csv")
 
+```
+
+List the titles by cluster and save the results
+
+```{r}
 # List the titles by cluster
 result <- sample_50 %>%
   arrange(cluster) %>%
   select(cluster, title)
 print(result)
 # Save results
-write_csv(result, "titles_by_cluster.csv")
+write_csv(result, "../output/titles_by_cluster.csv")
 
+```
+
+Check titles inside the clusters
+
+```{r}
 # Check titles inside each cluster to help identify the themes
 sample_50 %>%
   group_by(cluster) %>%
@@ -436,6 +572,12 @@ sample_50 %>%
 cluster_terms %>%
   group_by(cluster) %>%
   summarise(label = paste(head(word, 3), collapse = ", "))
+
+```
+
+Label clusters based on interpretations
+
+```{r}
 # Label clusters based on interpretations 
 sample_50 <- sample_50 %>%
   mutate(cluster_label = case_when(
@@ -445,11 +587,21 @@ sample_50 <- sample_50 %>%
     cluster == 4 ~ "Digital Mental Health Tools and Interventions",
     TRUE ~ "Unassigned"
   ))
+```
+
+Save labeled data
+
+```{r}
 # Save labeled data
-write_csv(sample_50, "final_labeled_data.csv")
+write_csv(sample_50, "../output/final_labeled_data.csv")
+```
+
+PCA Visualisation
+
+```{r}
 # PCA visualisation, profesional for statistical visualisation includes individual as a point
 pca <- prcomp(matrix_data, scale. = TRUE)
-png("pca_plot.png", width = 800, height = 600)
+png("../output/pca_plot.png", width = 800, height = 600)
 fviz_pca_ind(
   pca,
   geom = "point",
@@ -458,7 +610,11 @@ fviz_pca_ind(
   title = "Clusters of Studies (PCA)"
 )
 dev.off()
+```
 
+Distribution by publication time
+
+```{r}
 # Can also view theme distribution by publication time
 p <-ggplot(sample_50, aes(x = year, fill = cluster_label)) +
   geom_bar(position = "dodge") +
@@ -470,11 +626,21 @@ p <-ggplot(sample_50, aes(x = year, fill = cluster_label)) +
   ) +
   theme_minimal()
 print(p)
-ggsave("time_distribution.png", plot = p, width = 8, height = 6)
-dev.off()
 
-# FACET plot
-p <- ggplot(sample_50, aes(x = reorder(cluster_label, year), y = year)) +
+
+```
+
+Save the plot
+
+```{r}
+ggsave("../output/time_distribution.png", plot = p, width = 8, height = 6)
+```
+
+Facet plot
+
+```{r}
+# Facet plot
+p2 <- ggplot(sample_50, aes(x = reorder(cluster_label, year), y = year)) +
   geom_point() +
   coord_flip() +
   facet_wrap(~ cluster_label, scales = "free_y") +
@@ -491,11 +657,16 @@ p <- ggplot(sample_50, aes(x = reorder(cluster_label, year), y = year)) +
   axis.text.y = element_text(size = 6)
 )
 
-print(p)
+print(p2)
 
+```
+
+Save the plot in the Output folder
+
+```{r}
 ggsave(
-  "facet_plot.png",
-  plot = p,
+  "../output/facet_plot.png",
+  plot = p2,
   width = 14,     
   height = 10,
   dpi = 300,
@@ -507,15 +678,19 @@ ggsave(
 
 PRISMA 2020 official site (checklist + flow diagram)
 
-https://www.prisma-statement.org/
+<https://www.prisma-statement.org/>
 
-PRISMA extensions (PRISMA-S for search strategies, PRISMA-P for protocols)
+PRISMA extensions (PRISMA-S for search strategies, PRISMA-P for
+protocols)
 
-https://www.prisma-statement.org/extensions
+<https://www.prisma-statement.org/extensions>
 
 ```{r }
 # load package
 library(tidyverse)
+```
+
+```{r}
 prisma <- data.frame(
   stage = c(
     "Records identified",
@@ -548,10 +723,20 @@ prisma <- data.frame(
     40
   )
 )
+```
+
+Order for flow
+
+```{r}
 
 # Order for flow
 prisma$stage <- factor(prisma$stage, levels = rev(prisma$stage))
 
+```
+
+Plot the flow
+
+```{r}
 # Flow Plot
 p <- ggplot(prisma, aes(x = 1, y = stage)) +
   geom_point(size = 4, color = "steelblue") +
@@ -572,7 +757,12 @@ p <- ggplot(prisma, aes(x = 1, y = stage)) +
   xlim(1, 1.8) +
   ggtitle("PRISMA Flow Diagram (Study Selection Process)")
 print(p)
-ggsave("PRISMA_Flow.png", plot = p, width = 10, height = 8, bg = "white")
+```
+
+Save the Prisma plot
+
+```{r}
+ggsave("../output/PRISMA_Flow.png", plot = p, width = 10, height = 8, bg = "white")
 ```
 
 # Summary for the workshop
